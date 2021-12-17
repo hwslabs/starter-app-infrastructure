@@ -39,7 +39,7 @@ export class ServiceLayer extends Construct {
 
         const image = ContainerImage.fromDockerImageAsset(asset);
 
-        const zoneName = "hypto.com"
+        const zoneName = '{TEMPLATE_AWS_ZONE_NAME}'
         const domainZone = HostedZone.fromLookup(this, 'StagingZone', { domainName : zoneName });
         const domainName = `{TEMPLATE_SERVICE_HYPHEN_NAME}.${domainZone.zoneName}`;
         const certificate = new DnsValidatedCertificate(this, 'Certificate', {
