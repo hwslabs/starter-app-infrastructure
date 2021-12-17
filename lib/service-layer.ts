@@ -30,7 +30,7 @@ export class ServiceLayer extends Construct {
         const redisHost = props.dataLayer.redisHost;
 
         const asset = new DockerImageAsset(this, 'ImageAssetBuild', {
-            directory: '../{TEMPLATE_SERVER_NAME}'
+            directory: '../{TEMPLATE_APP_NAME}'
         });
 
         // compute repo name from asset image
