@@ -25,65 +25,76 @@ The infra sources are organized into the following files:
 
 ## Set up your own AWS and deploy the resources from your macOS
 
-- <details>
+<details>
   <summary>Install Homebrew</summary>
 
-  Download and install Homebrew:
+Download and install Homebrew:
 
   ```sh
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
   ```
+</details>
 
-- <details>
+<details>
   <summary>Install nvm</summary>
 
-  Install latest version of nvm:
+Install latest version of nvm:
 
   ```sh
   brew install nvm
   ```
-
-- <details>
+</details>
+<details>
   <summary>Install any version of Node</summary>
 
-  Install latest version of node:
+Install latest version of node:
 
   ```sh
   nvm install node
   ```
 
-  or any specific version of node:
+or any specific version of node:
 
   ```sh
   nvm install 14.17.6
   ```
-
-- <details>
+</details>
+<details>
   <summary>Install CDK</summary>
 
-  Follow the instructions from [AWS CDK Getting Started](https://docs.aws.amazon.com/cdk/latest/guide/getting_started.html#getting_started_prerequisites)
-  to configure your AWS account and install CDK
+Follow the instructions from [AWS CDK Getting Started](https://docs.aws.amazon.com/cdk/latest/guide/getting_started.html#getting_started_prerequisites)
+to configure your AWS account and install CDK
 
-- <details>
+</details>
+<details>
   <summary>Run a clean initialization</summary>
 
-  Run a custom clean build command (installing dependencies is handled part of the command)
+Run a custom clean build command (installing dependencies is handled part of the command)
 
   ```sh
   npm run clean
   ```
- 
-  Install npm dependencies
+
+Install npm dependencies
 
   ```sh
   npm install
   ```
 
-- <details>
-  <summary>Deploy to AWS</summary>
+</details>
+<details>
+  <summary>Deploy & Destroy on AWS</summary>
 
-  Deploy the stack with all 4 constructs
+To deploy the stack with all 4 constructs, run:
 
   ```sh
   cdk deploy
   ```
+
+To destroy the stack, run:
+
+  ```sh
+  cdk destroy
+  ```
+
+</details>
