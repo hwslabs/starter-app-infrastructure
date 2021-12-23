@@ -46,7 +46,7 @@ export class DataLayer extends Construct {
         redisSecurityGroup.addIngressRule(Peer.anyIpv4(), Port.tcp(6379), 'Allow from all on port 6379');
 
         const redisCluster = new CfnReplicationGroup(this, 'Redis', {
-            replicationGroupId: '{TEMPLATE_SERVICE_HYPHEN_NAME}-redis-replication-group',
+            replicationGroupId: '{TEMPLATE_SERVICE_HYPHEN_NAME}',
             replicationGroupDescription: 'redis',
             cacheNodeType: 'cache.t2.micro',
             engine: 'redis',
