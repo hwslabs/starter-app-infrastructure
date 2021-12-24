@@ -19,8 +19,8 @@ The infra sources are organized into the following files:
 - [package.json](package.json): Package dependencies for npm
 - [network-layer.ts](lib/network-layer.ts): Construct to create a multi-AZ VPC with 1 public and 2 private isolated subnets.
 - [data-layer.ts](lib/data-layer.ts): Construct to create a postgres aurora database cluster and a redis elasticache cluster.
-- [service-layer.ts](lib/service-layer.ts): Construct to create an ECS cluster with an ApplicationLoadBalancedFargateService with a validated DNS certificate.
-- [cicd-layer.ts](lib/cicd-layer.ts): Construct to create a CodePipeline with a Source, CodeBuild, ManualApproval and ECSDeploy stages.
+- [fargate-service-layer.ts](lib/service-layer/fargate-service-layer.ts): Construct to create an ECS cluster with an ApplicationLoadBalancedFargateService with a validated DNS certificate.
+- [cicd-layer.ts](lib/deployment-layer.ts): Construct to create a CodePipeline with a Source, CodeBuild, ManualApproval and ECSDeploy stages.
 - [stack.ts](bin/stack.ts): Stack that creates above 4 constructs in the right order.
 
 ## Set up your own AWS and deploy the resources from your macOS

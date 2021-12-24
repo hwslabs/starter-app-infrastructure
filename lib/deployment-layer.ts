@@ -1,34 +1,28 @@
-import {Construct, Stack} from "@aws-cdk/core";
-import {IBaseService} from "@aws-cdk/aws-ecs";
-import {Repository} from "@aws-cdk/aws-ecr";
+import {Construct} from "@aws-cdk/core";
 import {Artifact, Pipeline as CodePipeline} from "@aws-cdk/aws-codepipeline";
 import {StringParameter} from "@aws-cdk/aws-ssm";
 import {
     CodeBuildAction,
     CodeStarConnectionsSourceAction,
-    EcsDeployAction,
     ManualApprovalAction
 } from "@aws-cdk/aws-codepipeline-actions";
 import {
-    BuildSpec, EventAction, FilterGroup,
+    EventAction, FilterGroup,
     LinuxBuildImage, Project,
     Source
 } from "@aws-cdk/aws-codebuild";
 import {CfnConnection} from "@aws-cdk/aws-codestarconnections";
 import {Effect, PolicyStatement} from "@aws-cdk/aws-iam";
 import {Topic} from "@aws-cdk/aws-sns";
-import {ServiceLayer} from "./service-layer";
+import {ServiceFactory} from "./service-layer/factory/service-factory";
+import {Deployment} from "./configurations/deployment";
 
 interface CICDLayerProps {
-    serviceLayer: ServiceLayer
+    serviceFactory: ServiceFactory;
+    deployment: Deployment;
 }
 
-export class CICDLayer extends Construct {
-    private readonly serviceLayer: ServiceLayer;
-
-    readonly service: IBaseService;
-    readonly containerName: string;
-    readonly ecrRepo: Repository;
+export class DeploymentLayer extends Construct {
     readonly codeStarConnection: CfnConnection;
     readonly useConnectionPolicy: PolicyStatement;
 
@@ -43,14 +37,11 @@ export class CICDLayer extends Construct {
 
     constructor(scope: Construct, id: string, props: CICDLayerProps) {
         super(scope, id);
-        this.serviceLayer = props.serviceLayer;
-        this.service = this.serviceLayer.service;
-        this.ecrRepo = this.serviceLayer.ecrRepo;
-        this.containerName = this.serviceLayer.containerName;
+
         this.codeStarConnection = this.createCodeStarConnection();
         this.useConnectionPolicy = this.createConnectionPolicy();
-
-        this.pipeline = this.createPipeline();
+        const serviceFactory = props.serviceFactory;
+        this.pipeline = this.createPipeline(scope, serviceFactory, props.deployment);
     }
 
     private createCodeStarConnection() : CfnConnection {
@@ -68,13 +59,13 @@ export class CICDLayer extends Construct {
         })
     }
 
-    private createPipeline(): CodePipeline {
+    // @ts-ignore
+    private createPipeline(scope: Construct, serviceFactory: ServiceFactory, deployment: Deployment): CodePipeline {
         const sourceOutput = new Artifact();
         const buildOutput = new Artifact();
 
         // Create project and grant it pull push permissions to ECR
-        const project = this.createProject()
-        this.ecrRepo.grantPullPush(project.grantPrincipal);
+        const project = this.createProject(serviceFactory)
 
         const manualApprovalTopic = new Topic(this, 'ManualApprovalTopic', {
             displayName: 'CodePipelineManualApprovalTopic'
@@ -103,12 +94,8 @@ export class CICDLayer extends Construct {
             notifyEmails: [this.email],
             runOrder: 1
         });
-        const ecsDeployAction = new EcsDeployAction({
-            actionName: 'Deploy',
-            input: buildOutput,
-            service: this.service,
-            runOrder: 2
-        });
+
+        const deployAction = serviceFactory.deployAction(scope, buildOutput)
 
         const pipeline = new CodePipeline(this, 'Pipeline', {
             stages: [
@@ -122,15 +109,15 @@ export class CICDLayer extends Construct {
                 },
                 {
                     stageName: 'Deploy',
-                    actions: [manualApproval, ecsDeployAction],
+                    actions: [manualApproval, deployAction],
                 }
             ]
         });
         pipeline.role.addToPrincipalPolicy(this.useConnectionPolicy);
 
         // Add slack channel notification support for pipeline
-        // const slackChannel = new SlackChannelConfiguration(this, '{TEMPLATE_SERVICE_NAME}Slack', {
-        //     slackChannelConfigurationName: '{TEMPLATE_SERVICE_HYPHEN_NAME}-automation',
+        // const slackChannel = new SlackChannelConfiguration(this, `${deployment.slackConfigId}Slack`, {
+        //     slackChannelConfigurationName: `${deployment.slackConfigName}-automation`,
         //     slackWorkspaceId: this.slackWorkspaceId,
         //     slackChannelId: this.slackChannelId,
         // });
@@ -140,7 +127,7 @@ export class CICDLayer extends Construct {
         return pipeline;
     }
 
-    private createProject(): Project {
+    private createProject(serviceFactory: ServiceFactory): Project {
         const gitHubSource = Source.gitHub({
             owner: this.owner,
             repo: this.repo,
@@ -151,75 +138,23 @@ export class CICDLayer extends Construct {
             fetchSubmodules: true
         });
 
+        const environmentVariables = serviceFactory.environmentVariables(this)
+
         const project = new Project(
             this,
             'Project',
             {
-                buildSpec: this.createBuildSpec(),
+                buildSpec: serviceFactory.buildSpec(),
                 source: gitHubSource,
                 environment: {
                     buildImage: LinuxBuildImage.STANDARD_5_0,
                     privileged: true,
-                    environmentVariables: {
-                        AWS_ACCOUNT_ID: {
-                            value: Stack.of(this).account
-                        },
-                        AWS_REGION: {
-                            value: Stack.of(this).region
-                        },
-                        REPOSITORY_URI: {
-                            value: this.ecrRepo.repositoryUri
-                        },
-                        CONTAINER_NAME: {
-                            value: this.containerName
-                        }
-                    }
+                    environmentVariables
                 }
             }
         );
         project.role?.addToPrincipalPolicy(this.useConnectionPolicy)
+        serviceFactory.addProjectPermissions(project)
         return project;
-    }
-
-    createBuildSpec(): BuildSpec {
-        return BuildSpec.fromObject({
-            version: '0.2',
-            phases: {
-                pre_build: {
-                    commands: [
-                        'echo Logging in to Amazon ECR...',
-                        'aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com',
-                        'echo Logged in to ECR with $AWS_ACCOUNT_ID $AWS_REGION',
-                        'COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)',
-                        'IMAGE_TAG=${COMMIT_HASH:=latest}',
-                        'echo Ready to build on commit=$COMMIT_HASH with image=$IMAGE_TAG...'
-                    ]
-                },
-                build: {
-                    commands: [
-                        'echo Build started on `date`',
-                        'echo Building the Docker image with $REPOSITORY_URI...',
-                        'docker build -t $REPOSITORY_URI:latest .',
-                        'echo Tagging the built docker image with $IMAGE_TAG...',
-                        'docker tag $REPOSITORY_URI:latest $REPOSITORY_URI:$IMAGE_TAG',
-                    ]
-                },
-                post_build: {
-                    commands: [
-                        'echo Build completed on `date`',
-                        'echo Pushing the Docker image to ${REPOSITORY_URI}:latest...',
-                        'docker push $REPOSITORY_URI:latest',
-                        'echo Pushing the Docker image to ${REPOSITORY_URI}:$IMAGE_TAG...',
-                        'docker push $REPOSITORY_URI:$IMAGE_TAG',
-                        'printf "[{\\"name\\":\\"${CONTAINER_NAME}\\",\\"imageUri\\":\\"${REPOSITORY_URI}:latest\\"}]" > imagedefinitions.json'
-                    ]
-                }
-            },
-            artifacts: {
-                files: [
-                    'imagedefinitions.json'
-                ]
-            }
-        });
     }
 }

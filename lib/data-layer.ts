@@ -3,9 +3,13 @@ import {Construct, RemovalPolicy, SecretValue} from "@aws-cdk/core";
 import {NetworkLayer} from "./network-layer";
 import {InstanceClass, InstanceSize, InstanceType, IVpc, Peer, Port, SecurityGroup, SubnetType} from "@aws-cdk/aws-ec2";
 import {CfnReplicationGroup, CfnSubnetGroup} from "@aws-cdk/aws-elasticache";
+import {Infrastructure} from "./configurations/infra";
+import {Cache} from "./configurations/cache";
+import {Database} from "./configurations/database";
 
 interface DataLayerProps {
-    networkLayer: NetworkLayer
+    conf: Infrastructure;
+    networkLayer: NetworkLayer;
 }
 
 export class DataLayer extends Construct {
@@ -17,36 +21,41 @@ export class DataLayer extends Construct {
     constructor(scope: Construct, id: string, props: DataLayerProps) {
         super(scope, id);
 
+        const conf = props.conf;
+
         // Import network resources
         const vpc = props.networkLayer.vpc;
 
         // Create redis cluster
-        const redisParams = this.createRedisCluster(vpc);
+        if(conf.cache != null) {
+            const redisParams = this.createRedisCluster(vpc, conf.cache);
+            this.redisCluster = redisParams.redisCluster;
+            this.redisHost = redisParams.redisUrl;
+        }
 
-        // Create DB cluster
-        const dbParams = this.createDbCluster(vpc);
-
-        this.redisCluster = redisParams.redisCluster;
-        this.redisHost = redisParams.redisUrl;
-        this.dbCluster = dbParams.dbCluster;
-        this.dbUrl = dbParams.dbUrl;
+        if(conf.database != null) {
+            // Create DB cluster
+            const dbParams = this.createDbCluster(vpc, conf.database);
+            this.dbCluster = dbParams.dbCluster;
+            this.dbUrl = dbParams.dbUrl;
+        }
     }
 
-    private createRedisCluster(vpc: IVpc) {
+    private createRedisCluster(vpc: IVpc, cacheConfig: Cache) {
         //Create redis cache cluster
         const redisSecurityGroup: SecurityGroup = new SecurityGroup(this, 'SecurityGroup', {
             vpc
         });
         const subnetGroup: CfnSubnetGroup =
             new CfnSubnetGroup(this, 'SubnetGroup', {
-                cacheSubnetGroupName: '{TEMPLATE_SERVICE_HYPHEN_NAME}-redis-subnet-group',
+                cacheSubnetGroupName: cacheConfig.name,
                 description: `Subnets for redis cache`,
                 subnetIds: vpc.selectSubnets({subnetName: 'application'}).subnetIds
             });
         redisSecurityGroup.addIngressRule(Peer.anyIpv4(), Port.tcp(6379), 'Allow from all on port 6379');
 
         const redisCluster = new CfnReplicationGroup(this, 'Redis', {
-            replicationGroupId: '{TEMPLATE_SERVICE_HYPHEN_NAME}',
+            replicationGroupId: cacheConfig.replicationId,
             replicationGroupDescription: 'redis',
             cacheNodeType: 'cache.t2.micro',
             engine: 'redis',
@@ -61,13 +70,13 @@ export class DataLayer extends Construct {
         return {redisCluster, redisUrl: redisHost};
     }
 
-    private createDbCluster(vpc: IVpc) {
+    private createDbCluster(vpc: IVpc, dbConfig: Database) {
         // Create secret from SecretsManager
         const username = 'root';
         // Import password
         const password = SecretValue.secretsManager(`rds/cluster/${username}/password`);
 
-        const databaseName = '{TEMPLATE_SERVICE_UNDERSCORE_NAME}';
+        const databaseName = dbConfig.name;
 
         // Import DB cluster ParameterGroup
         const parameterGroup = ParameterGroup.fromParameterGroupName(

@@ -1,29 +1,31 @@
 import {Construct} from "@aws-cdk/core";
 import {IVpc, SubnetType, Vpc} from "@aws-cdk/aws-ec2";
-import {Cluster, ICluster} from "@aws-cdk/aws-ecs";
+import {Infrastructure} from "./configurations/infra";
+
+interface NetworkLayerProps {
+    conf: Infrastructure
+}
 
 export class NetworkLayer extends Construct {
     public readonly vpc: IVpc;
-    public readonly cluster: ICluster;
 
-    constructor(scope: Construct, id: string) {
+    constructor(scope: Construct, id: string, props: NetworkLayerProps) {
         super(scope, id);
 
+        const conf = props.conf
+
+        const natGateways = conf.nat == 'NAT' ? 1 : 0;
+
         // Setting up VPC with subnets
-        const vpc = new Vpc(this, 'Vpc', {
+        this.vpc = new Vpc(this, 'Vpc', {
             maxAzs: 2,
             cidr: '10.0.0.0/21',
             enableDnsSupport: true,
-            natGateways: 2,
+            natGateways,
             subnetConfiguration: [
                 {
                     cidrMask: 24,
                     name: 'application',
-                    subnetType: SubnetType.PRIVATE_ISOLATED
-                },
-                {
-                    cidrMask: 24,
-                    name: 'ingress',
                     subnetType: SubnetType.PUBLIC
                 },
                 {
@@ -33,8 +35,5 @@ export class NetworkLayer extends Construct {
                 },
             ]
         });
-        this.vpc = vpc;
-
-        this.cluster = new Cluster(this, 'ECSCluster', { vpc });
     }
 }
